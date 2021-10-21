@@ -9,3 +9,10 @@ def main():
 if __name__ == "__main__":
     main()
     log_in_module.main()
+
+    try:
+        raise TypeError
+    except TypeError as e:
+        # ~~~~~~~~~~~^^^^^  
+        logger.error("Type error", exc_info=e)
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^ to jest potrzebne, zeby dostać ładnego tracebacka
