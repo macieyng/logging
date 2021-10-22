@@ -2,11 +2,12 @@ import logging
 import re
 import rollbar
 from rollbar.logger import RollbarHandler
+import sys
 
 DEFAULT_FORMAT = (
-    "%(module)s.%(filename)s.%(funcName)s %(levelname)s [STORE: %(store)s] %(message)s"
+    "%(module)s.%(filename)s.%(funcName)s %(levelname)s [STORE: %(store_id)s] %(message)s"
 )
-ROLLBAR_FORMAT = "[STORE: %(store)s] %(message)s"
+ROLLBAR_FORMAT = "[STORE: %(store_id)s] %(message)s"
 
 SENSITIVE_INFO_PATTERNS = [
     r"(?<=('|\")AdditionalResponse('|\"): ('|\"))[^('|\")]+(?=('|\"))",
@@ -74,7 +75,11 @@ class CustomRollbarHandler(RollbarHandler):
                 if record.msg:
                     message_template = {
                         "body": {
-                            "trace": {"exception": {"description": record.getMessage()}}
+                            "trace": {
+                                "exception": {
+                                    "description": self.format(record),
+                                }
+                            }
                         }
                     }
                     payload_data = rollbar.dict_merge(
@@ -117,8 +122,8 @@ class StoreFormatter(logging.Formatter):
         return msg
 
     def format_store(self, record):
-        if not hasattr(record, "store"):
-            setattr(record, "store", None)
+        if not hasattr(record, "store_id"):
+            setattr(record, "store_id", None)
         return record
 
     def format_pattern(self, msg):
@@ -142,3 +147,13 @@ for handler in logger.handlers:
         handler.setFormatter(rollbar_formatter)
     else:
         handler.setFormatter(formatter)
+
+
+def handle_exception(exc_type, exc_value, exc_traceback):
+    logger.error(
+        "Uncaught exception. Value %s",
+        exc_value,
+        exc_info=(exc_type, exc_value, exc_traceback),
+    )
+
+sys.excepthook = handle_exception

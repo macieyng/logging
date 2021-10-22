@@ -3,16 +3,15 @@ from module import log_in_module
 
 
 def main():
-    logger.error("error from main.py payment_token='tkoane'", extra={"store": 2})
+    logger.error("redacted payment_token='tkoane'")
+
+    store_id = 3
+    logger.error("redacted with store id payment_token='tkoane'")
 
 
 if __name__ == "__main__":
+    store_id = 2
     main()
     log_in_module.main()
 
-    try:
-        raise TypeError
-    except TypeError as e:
-        # ~~~~~~~~~~~^^^^^  
-        logger.error("Type error", exc_info=e)
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^ to jest potrzebne, zeby dostać ładnego tracebacka
+    raise Exception
