@@ -5,9 +5,9 @@ from rollbar.logger import RollbarHandler
 import sys
 
 DEFAULT_FORMAT = (
-    "%(module)s.%(filename)s.%(funcName)s %(levelname)s [STORE: %(store_id)s] %(message)s"
+    "%(name)s %(levelname)s [STORE:%(store_id)s] %(message)s"
 )
-ROLLBAR_FORMAT = "[STORE: %(store_id)s] %(message)s"
+# ROLLBAR_FORMAT = "[STORE: %(store_id)s] %(message)s"
 
 SENSITIVE_INFO_PATTERNS = [
     r"(?<=('|\")AdditionalResponse('|\"): ('|\"))[^('|\")]+(?=('|\"))",
@@ -22,108 +22,32 @@ SENSITIVE_INFO_PATTERNS = [
 ]
 
 
-class CustomRollbarHandler(RollbarHandler):
-    def emit(self, record):
-        # If the record came from Rollbar's own logger don't report it
-        # to Rollbar
-        if record.name == rollbar.__log_name__:
-            return
-
-        level = record.levelname.lower()
-
-        if level not in self.SUPPORTED_LEVELS:
-            return
-
-        exc_info = record.exc_info
-
-        extra_data = {
-            "args": record.args,
-            "record": {
-                "created": record.created,
-                "funcName": record.funcName,
-                "lineno": record.lineno,
-                "module": record.module,
-                "name": record.name,
-                "pathname": record.pathname,
-                "process": record.process,
-                "processName": record.processName,
-                "relativeCreated": record.relativeCreated,
-                "thread": record.thread,
-                "threadName": record.threadName,
-            },
-        }
-
-        extra_data.update(getattr(record, "extra_data", {}))
-
-        payload_data = getattr(record, "payload_data", {})
-
-        self._add_history(record, payload_data)
-
-        # after we've added the history data, check to see if the
-        # notify level is satisfied
-        if record.levelno < self.notify_level:
-            return
-
-        # Wait until we know we're going to send a report before trying to
-        # load the request
-        request = getattr(record, "request", None) or rollbar.get_request()
-
-        uuid = None
-        try:
-            # when not in an exception handler, exc_info == (None, None, None)
-            if exc_info and exc_info[0]:
-                if record.msg:
-                    message_template = {
-                        "body": {
-                            "trace": {
-                                "exception": {
-                                    "description": self.format(record),
-                                }
-                            }
-                        }
-                    }
-                    payload_data = rollbar.dict_merge(
-                        payload_data, message_template, silence_errors=True
-                    )
-
-                uuid = rollbar.report_exc_info(
-                    exc_info,
-                    level=level,
-                    request=request,
-                    extra_data=extra_data,
-                    payload_data=payload_data,
-                )
-            else:
-                uuid = rollbar.report_message(
-                    self.format(
-                        record
-                    ),  # w oryginale record.getMessage() przez co wiadomość nie jest sformatowana
-                    level=level,
-                    request=request,
-                    extra_data=extra_data,
-                    payload_data=payload_data,
-                )
-        except:
-            self.handleError(record)
-        else:
-            if uuid:
-                record.rollbar_uuid = uuid
-
-
 class StoreFormatter(logging.Formatter):
-    def __init__(self, *args, patterns, **kwargs):
+    def __init__(self, patterns = SENSITIVE_INFO_PATTERNS, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._patterns = patterns
 
     def format(self, record):
-        record = self.format_store(record)
+        if "store_id" in self._fmt:
+            record = self.format_store(record)
         msg = super().format(record)
+        return msg
+
+    def formatMessage(self, record):
+        msg = super().formatMessage(record)
         msg = self.format_pattern(msg)
         return msg
 
+    def get_formatting_no_store_id(self):
+        format_parts = self._fmt.split(" ")
+        format_parts = format_parts[:-2] + [format_parts[-1]]
+        return " ".join(format_parts)
+
     def format_store(self, record):
         if not hasattr(record, "store_id"):
-            setattr(record, "store_id", None)
+            self._style._fmt = self.get_formatting_no_store_id()
+        else:
+            self._style._fmt = self._fmt
         return record
 
     def format_pattern(self, msg):
@@ -132,28 +56,39 @@ class StoreFormatter(logging.Formatter):
         return msg
 
 
-logger = logging.getLogger()
+def get_logger(name = __name__):
 
-rollbar_handler = CustomRollbarHandler(
-    "token", environment="maciek_logs"
-)
-rollbar_handler.setLevel(logging.ERROR)
-logger.addHandler(rollbar_handler)
+    logger = logging.getLogger(name)
+    logger.setLevel(level=logging.DEBUG)
 
-formatter = StoreFormatter(fmt=DEFAULT_FORMAT, patterns=SENSITIVE_INFO_PATTERNS)
-rollbar_formatter = StoreFormatter(fmt=ROLLBAR_FORMAT, patterns=SENSITIVE_INFO_PATTERNS)
-for handler in logger.handlers:
-    if isinstance(handler, CustomRollbarHandler):
-        handler.setFormatter(rollbar_formatter)
-    else:
+    formatter = StoreFormatter(patterns=SENSITIVE_INFO_PATTERNS, fmt=DEFAULT_FORMAT)
+
+    rollbar_handler = RollbarHandler(
+        "", environment=""
+    )
+    rollbar_handler.setLevel(logging.ERROR)
+    logger.addHandler(rollbar_handler)
+
+    stderr_handler = logging.StreamHandler(stream=sys.stderr)
+    stderr_handler.setLevel(logging.ERROR)
+    logger.addHandler(stderr_handler)
+    
+    stdout_handler = logging.StreamHandler(stream=sys.stdout)
+    stdout_handler.setLevel(logging.DEBUG)
+    logger.addHandler(stdout_handler)
+
+    for handler in logger.handlers:
         handler.setFormatter(formatter)
 
+    return logger
 
-def handle_exception(exc_type, exc_value, exc_traceback):
+def handle_uncaught_exception(exc_type, exc_value, exc_traceback):
+    print("handling uncaught exception")
+    logger = get_logger()
     logger.error(
         "Uncaught exception. Value %s",
         exc_value,
         exc_info=(exc_type, exc_value, exc_traceback),
     )
 
-sys.excepthook = handle_exception
+sys.excepthook = handle_uncaught_exception

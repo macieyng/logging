@@ -1,5 +1,7 @@
-from log_config.log_config import logger
+from log_config.log_config import get_logger
 from module import log_in_module
+
+logger = get_logger()
 
 
 def main():

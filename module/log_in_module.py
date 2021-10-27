@@ -1,7 +1,7 @@
 from sys import exc_info
-from log_config.log_config import logger
+from log_config.log_config import get_logger
 
-
+logger = get_logger()
 def main():
     logger.error("error")
     store_id = 1
